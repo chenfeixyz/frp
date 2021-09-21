@@ -18,8 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/fatedier/frp/pkg/util/ttl"
 	"io"
-	"io/ioutil"
 	"net"
 	"sync"
 	"time"
@@ -266,23 +266,32 @@ func (sv *XTCPVisitor) handleConn(userConn net.Conn) {
 	visitorConn.Close()
 
 	// send sid message to client
-	laddr, _ := net.ResolveUDPAddr("udp", visitorConn.LocalAddr().String())
+	//laddr, _ := net.ResolveUDPAddr("udp", visitorConn.LocalAddr().String())
 	daddr, err := net.ResolveUDPAddr("udp", natHoleRespMsg.ClientAddr)
 	if err != nil {
 		xl.Error("resolve client udp address error: %v", err)
 		return
 	}
-	lConn, err := net.DialUDP("udp", laddr, daddr)
+	lConn, err := net.DialUDP("udp", visitorConn.LocalAddr().(*net.UDPAddr), daddr)
 	if err != nil {
 		xl.Error("dial client udp address error: %v", err)
 		return
 	}
 	defer lConn.Close()
 
+
+	sidBuf := pool.GetBuf(1024)
+
+	ttl.SetTTL(lConn, 3)
+	lConn.Write([]byte(natHoleRespMsg.Sid))
+	ttl.SetTTL(lConn, 64)
+	lConn.Read(sidBuf)
+	time.Sleep(time.Second*2)
+
 	lConn.Write([]byte(natHoleRespMsg.Sid))
 
 	// read ack sid from client
-	sidBuf := pool.GetBuf(1024)
+
 	lConn.SetReadDeadline(time.Now().Add(8 * time.Second))
 	n, err = lConn.Read(sidBuf)
 	if err != nil {
@@ -308,7 +317,7 @@ func (sv *XTCPVisitor) handleConn(userConn net.Conn) {
 
 	fmuxCfg := fmux.DefaultConfig()
 	fmuxCfg.KeepAliveInterval = 5 * time.Second
-	fmuxCfg.LogOutput = ioutil.Discard
+	//fmuxCfg.LogOutput = ioutil.Discard
 	sess, err := fmux.Client(remote, fmuxCfg)
 	if err != nil {
 		xl.Error("create yamux session error: %v", err)
