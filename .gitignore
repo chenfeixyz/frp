@@ -34,3 +34,4 @@ dist/
 
 # Cache
 *.swp
+cmd/frpc/frpc
