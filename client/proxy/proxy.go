@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/fatedier/frp/pkg/util/ttl"
+	"golang.org/x/net/ipv4"
 	"io"
 	"net"
 	"strconv"
@@ -346,66 +346,18 @@ func (pxy *XTCPProxy) InWorkConn(conn net.Conn, m *msg.StartWorkConn) {
 
 	xl.Trace("get natHoleRespMsg, sid [%s], client address [%s] visitor address [%s]", natHoleRespMsg.Sid, natHoleRespMsg.ClientAddr, natHoleRespMsg.VisitorAddr)
 
-	// Send detect message
-	array := strings.Split(natHoleRespMsg.VisitorAddr, ":")
-	if len(array) <= 1 {
-		xl.Error("get NatHoleResp visitor address error: %v", natHoleRespMsg.VisitorAddr)
-	}
-	//laddr, _ := net.ResolveUDPAddr("udp", clientConn.LocalAddr().String())
-	/*
-		for i := 1000; i < 65000; i++ {
-			pxy.sendDetectMsg(array[0], int64(i), laddr, "a")
-		}
-	*/
-	//port, err := strconv.ParseInt(array[1], 10, 64)
-	//if err != nil {
-	//	xl.Error("get natHoleResp visitor address error: %v", natHoleRespMsg.VisitorAddr)
-	//	return
-	//}
-	//pxy.sendDetectMsg(array[0], int(port), laddr, []byte(natHoleRespMsg.Sid))
-	//xl.Trace("send all detect msg done")
-
-	// Listen for clientConn's address and wait for visitor connection
-	lConn, err := net.ListenUDP("udp", clientConn.LocalAddr().(*net.UDPAddr))
-	if err != nil {
-		xl.Error("listen on visitorConn's local adress error: %v", err)
-		return
-	}
-	defer lConn.Close()
-
-	vaddr, _ := net.ResolveUDPAddr("udp", natHoleRespMsg.VisitorAddr)
-
 	msg.WriteMsg(conn, &msg.NatHoleClientDetectOK{})
 
-	sidBuf := pool.GetBuf(1024)
-	ttl.SetTTL(lConn, 3)
-	lConn.WriteToUDP([]byte(natHoleRespMsg.Sid), vaddr)
-	ttl.SetTTL(lConn, 64)
-	lConn.Read(sidBuf)
-	time.Sleep(time.Second*2)
-
-	//log.Println(e,n)
-	lConn.WriteToUDP([]byte(natHoleRespMsg.Sid), vaddr)
-
-	lConn.SetReadDeadline(time.Now().Add(8 * time.Second))
-
-	var uAddr *net.UDPAddr
-	n, uAddr, err = lConn.ReadFromUDP(sidBuf)
+	lConn, uAddr, err := NetHole(clientConn.LocalAddr().String(), natHoleRespMsg.VisitorAddr, natHoleRespMsg.Sid)
 	if err != nil {
 		xl.Warn("get sid from visitor error: %v", err)
 		return
 	}
-	lConn.SetReadDeadline(time.Time{})
-	if string(sidBuf[:n]) != natHoleRespMsg.Sid {
-		xl.Warn("incorrect sid from visitor")
-		return
-	}
-	pool.PutBuf(sidBuf)
+	defer lConn.Close()
+
 	xl.Info("nat hole connection make success, sid [%s]", natHoleRespMsg.Sid)
 
-	lConn.WriteToUDP(sidBuf[:n], uAddr)
-
-	kcpConn, err := frpNet.NewKCPConnFromUDP(lConn, false, uAddr.String())
+	kcpConn, err := frpNet.NewKCPConnFromUDP(lConn, uAddr.String())
 	if err != nil {
 		xl.Error("create kcp connection from udp connection error: %v", err)
 		return
@@ -413,7 +365,7 @@ func (pxy *XTCPProxy) InWorkConn(conn net.Conn, m *msg.StartWorkConn) {
 
 	fmuxCfg := fmux.DefaultConfig()
 	fmuxCfg.KeepAliveInterval = 5 * time.Second
-	//fmuxCfg.LogOutput = ioutil.Discard
+	//fmuxCfg.LogOutput = io.Discard
 	sess, err := fmux.Server(kcpConn, fmuxCfg)
 	if err != nil {
 		xl.Error("create yamux server from kcp connection error: %v", err)
@@ -441,8 +393,8 @@ func (pxy *XTCPProxy) sendDetectMsg(addr string, port int, laddr *net.UDPAddr, c
 		return err
 	}
 
-	//uConn := ipv4.NewConn(tConn)
-	//uConn.SetTTL(3)
+	uConn := ipv4.NewConn(tConn)
+	uConn.SetTTL(3)
 
 	tConn.Write(content)
 	tConn.Close()
@@ -819,4 +771,58 @@ func HandleTCPWorkConnection(ctx context.Context, localInfo *config.LocalSvrConf
 
 	frpIo.Join(localConn, remote)
 	xl.Debug("join connections closed")
+}
+
+func NetHole(ladd, radd, sid string) (*net.UDPConn,*net.UDPAddr, error) {
+	laddr, _ := net.ResolveUDPAddr("udp", ladd)
+	raddr, _ := net.ResolveUDPAddr("udp", radd)
+	closed := false
+	connected := false
+	var uAddr *net.UDPAddr
+
+	lConn, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		return nil,uAddr, err
+	}
+	defer func() {
+		if !connected && lConn != nil {
+			lConn.Close()
+		}
+	}()
+
+	go func() {
+		sidBuf := pool.GetBuf(1024)
+		defer pool.PutBuf(sidBuf)
+		var n int
+		for !closed {
+			lConn.SetReadDeadline(time.Now().Add(8 * time.Second))
+			n, uAddr, err = lConn.ReadFromUDP(sidBuf)
+			if err != nil {
+				continue
+			}
+			if string(sidBuf[:n]) == sid {
+				connected = true
+				return
+			}
+		}
+	}()
+
+	uConn := ipv4.NewConn(lConn)
+	for i:=0 ;i < 5*8 && !connected;i++{
+		uConn.SetTTL(3)
+		lConn.WriteToUDP([]byte(sid), raddr)
+		time.Sleep(time.Millisecond*100)
+		uConn.SetTTL(64)
+		lConn.WriteToUDP([]byte(sid), raddr)
+		time.Sleep(time.Millisecond*100)
+	}
+	closed = true
+
+	if !connected || uAddr == nil {
+		return nil,uAddr, err
+	}
+	uConn.SetTTL(128)
+	lConn.SetReadDeadline(time.Time{})
+
+	return lConn,uAddr, nil
 }

@@ -16,9 +16,10 @@ package net
 
 import (
 	"fmt"
+	"github.com/xtaci/kcp-go/v5"
+	"github.com/pkg/errors"
 	"net"
 
-	kcp "github.com/fatedier/kcp-go"
 )
 
 type KCPListener struct {
@@ -84,8 +85,13 @@ func (l *KCPListener) Addr() net.Addr {
 	return l.listener.Addr()
 }
 
-func NewKCPConnFromUDP(conn *net.UDPConn, connected bool, raddr string) (net.Conn, error) {
-	kcpConn, err := kcp.NewConnEx(1, connected, raddr, nil, 10, 3, conn)
+func NewKCPConnFromUDP(conn *net.UDPConn, raddr string) (net.Conn, error) {
+	udpaddr, err := net.ResolveUDPAddr("udp", raddr)
+	if err != nil {
+		return nil, errors.Wrap(err, "net.ResolveUDPAddr")
+	}
+
+	kcpConn, err := kcp.NewConn3(1, udpaddr, nil, 10, 3, conn)
 	if err != nil {
 		return nil, err
 	}

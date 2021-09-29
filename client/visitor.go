@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/fatedier/frp/pkg/util/ttl"
+	"github.com/fatedier/frp/client/proxy"
 	"io"
 	"net"
 	"sync"
@@ -260,56 +260,24 @@ func (sv *XTCPVisitor) handleConn(userConn net.Conn) {
 		return
 	}
 
-	xl.Trace("get natHoleRespMsg, sid [%s], client address [%s], visitor address [%s]", natHoleRespMsg.Sid, natHoleRespMsg.ClientAddr, natHoleRespMsg.VisitorAddr)
+	xl.Info("get natHoleRespMsg, sid [%s], client address [%s], visitor address [%s]", natHoleRespMsg.Sid, natHoleRespMsg.ClientAddr, natHoleRespMsg.VisitorAddr)
 
 	// Close visitorConn, so we can use it's local address.
 	visitorConn.Close()
 
-	// send sid message to client
-	//laddr, _ := net.ResolveUDPAddr("udp", visitorConn.LocalAddr().String())
-	daddr, err := net.ResolveUDPAddr("udp", natHoleRespMsg.ClientAddr)
-	if err != nil {
-		xl.Error("resolve client udp address error: %v", err)
-		return
-	}
-	lConn, err := net.DialUDP("udp", visitorConn.LocalAddr().(*net.UDPAddr), daddr)
-	if err != nil {
-		xl.Error("dial client udp address error: %v", err)
-		return
-	}
-	defer lConn.Close()
-
-
-	sidBuf := pool.GetBuf(1024)
-
-	ttl.SetTTL(lConn, 3)
-	lConn.Write([]byte(natHoleRespMsg.Sid))
-	ttl.SetTTL(lConn, 64)
-	lConn.Read(sidBuf)
-	time.Sleep(time.Second*2)
-
-	lConn.Write([]byte(natHoleRespMsg.Sid))
-
-	// read ack sid from client
-
-	lConn.SetReadDeadline(time.Now().Add(8 * time.Second))
-	n, err = lConn.Read(sidBuf)
+	lConn, uAddr, err := proxy.NetHole(visitorConn.LocalAddr().String(), natHoleRespMsg.ClientAddr, natHoleRespMsg.Sid)
 	if err != nil {
 		xl.Warn("get sid from client error: %v", err)
 		return
 	}
-	lConn.SetReadDeadline(time.Time{})
-	if string(sidBuf[:n]) != natHoleRespMsg.Sid {
-		xl.Warn("incorrect sid from client")
-		return
-	}
-	pool.PutBuf(sidBuf)
+	defer lConn.Close()
 
 	xl.Info("nat hole connection make success, sid [%s]", natHoleRespMsg.Sid)
 
 	// wrap kcp connection
 	var remote io.ReadWriteCloser
-	remote, err = frpNet.NewKCPConnFromUDP(lConn, true, natHoleRespMsg.ClientAddr)
+	//remote, err = frpNet.NewKCPConnFromUDP(lConn, false, natHoleRespMsg.ClientAddr)
+	remote, err = frpNet.NewKCPConnFromUDP(lConn, uAddr.String())
 	if err != nil {
 		xl.Error("create kcp connection from udp connection error: %v", err)
 		return
@@ -317,7 +285,7 @@ func (sv *XTCPVisitor) handleConn(userConn net.Conn) {
 
 	fmuxCfg := fmux.DefaultConfig()
 	fmuxCfg.KeepAliveInterval = 5 * time.Second
-	//fmuxCfg.LogOutput = ioutil.Discard
+	//fmuxCfg.LogOutput = io.Discard
 	sess, err := fmux.Client(remote, fmuxCfg)
 	if err != nil {
 		xl.Error("create yamux session error: %v", err)

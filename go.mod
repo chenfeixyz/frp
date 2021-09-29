@@ -13,12 +13,11 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/hashicorp/yamux v0.0.0-20210707203944-259a57b3608c
-	github.com/klauspost/cpuid v1.2.0 // indirect
-	github.com/klauspost/reedsolomon v1.9.1 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.13.0
 	github.com/pires/go-proxyproto v0.5.0
+	github.com/pkg/errors v0.9.1
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/rodaine/table v1.0.1
@@ -26,8 +25,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/templexxx/cpufeat v0.0.0-20170927014610-3794dfbfb047 // indirect
 	github.com/templexxx/xor v0.0.0-20170926022130-0af8e873c554 // indirect
-	github.com/tjfoc/gmsm v0.0.0-20171124023159-98aa888b79d8 // indirect
-	github.com/xtaci/lossyconn v0.0.0-20190602105132-8df528c0c9ae // indirect
+	github.com/xtaci/kcp-go/v5 v5.6.1
 	golang.org/x/net v0.0.0-20210428140749-89ef3d95e781
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22 // indirect
