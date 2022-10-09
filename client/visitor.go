@@ -265,9 +265,9 @@ func (sv *XTCPVisitor) handleConn(userConn net.Conn) {
 	// Close visitorConn, so we can use it's local address.
 	visitorConn.Close()
 
-	lConn, uAddr, err := proxy.NetHole(visitorConn.LocalAddr().String(), natHoleRespMsg.ClientAddr, natHoleRespMsg.Sid)
-	if err != nil {
-		xl.Warn("get sid from client error: %v", err)
+	lConn, uAddr, e := proxy.NetHole(visitorConn.LocalAddr().String(), natHoleRespMsg.ClientAddr, natHoleRespMsg.Sid)
+	if e != nil {
+		xl.Warn("get sid from client error: %v", e)
 		return
 	}
 	defer lConn.Close()

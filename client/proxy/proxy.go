@@ -18,8 +18,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	errors2 "github.com/pkg/errors"
 	"golang.org/x/net/ipv4"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -798,6 +800,7 @@ func NetHole(ladd, radd, sid string) (*net.UDPConn,*net.UDPAddr, error) {
 			lConn.SetReadDeadline(time.Now().Add(8 * time.Second))
 			n, uAddr, err = lConn.ReadFromUDP(sidBuf)
 			if err != nil {
+				log.Println("NetHole ",err.Error())
 				continue
 			}
 			if string(sidBuf[:n]) == sid {
@@ -819,6 +822,9 @@ func NetHole(ladd, radd, sid string) (*net.UDPConn,*net.UDPAddr, error) {
 	closed = true
 
 	if !connected || uAddr == nil {
+		if err == nil {
+			err = errors2.New("NetHole failed!")
+		}
 		return nil,uAddr, err
 	}
 	uConn.SetTTL(128)
